@@ -1,0 +1,81 @@
+version: "3.8"
+services:
+
+  elasticsearch:
+    image: elasticsearch:8.12.2
+    container_name: es8
+    environment:
+      - node.name=${NAME_NODE}
+      - cluster.name=${NAME_CLUSTER}
+      - discovery.type=${NUMBER_NODE}
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+    ports: 
+      - 9200:9200
+    networks:
+      - elastic
+
+  kibana:
+    image: kibana:8.12.2
+    depends_on: 
+      - elasticsearch
+    container_name: kib8
+    environment:
+      - node.name=kib8
+      - cluster.name=${NAME_CLUSTER}
+      - ELASTICSEARCH_HOSTS=${ELASTICSEARCH_HOSTS}
+    ports:
+      - 5601:5601
+    networks:
+      - elastic
+
+  fluentd:
+    build: ./fluentd
+    depends_on:
+      - elasticsearch
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    networks:
+      - elastic
+
+  logstash:
+    depends_on:
+      - elasticsearch
+    image: logstash:8.12.2
+    ports:
+      - "12201:12201/tcp"
+      - "12201:12201/udp"
+    volumes:
+      - "./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro"
+      - "./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml"
+    networks:
+      - elastic
+
+
+  nginx1:
+    image: nginx:1.25.4-alpine
+    ports:
+      - "81:80"
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: "localhost:24224"
+    networks:
+      - elastic
+
+  nginx2:
+    image: nginx:1.25.4-alpine
+    ports:
+      - "82:80"
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+    networks:
+      - elastic
+
+
+networks:
+  elastic:
+    driver: bridge
